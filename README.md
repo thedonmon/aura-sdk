@@ -44,6 +44,7 @@ baseUrl?: string,
 options?: {
 cacheTTL?: number;
 cacheProvider?: CacheProvider;
+useCompression?: boolean;
 }
 )
 ```
@@ -79,9 +80,75 @@ All main query methods have corresponding pagination helpers:
 - `paginateSignaturesForAsset(params)`
 - `paginateTokenAccounts(params)`
 
-### Caching
+### Caching and Compression
 
-The SDK includes optional caching support through the `CacheProvider` interface:
+The SDK includes optional caching support with data compression to minimize storage usage. You can configure both features when initializing the SDK:
+
+```typescript
+const sdk = new Aura('your-api-key', 'https://mainnet-aura.metaplex.com', {
+  cacheTTL: 60000, // 1 minute
+  cacheProvider: new RedisCache(),
+  useCompression: true // Enable/disable compression (default: true)
+});
+```
+
+The compression feature uses `compress-json` to efficiently store cached data by:
+- Deduplicating repeated values
+- Encoding numbers in base62 format
+- Preserving object key order
+- Supporting all JSON types
+
+This can significantly reduce cache storage usage while maintaining fast access times.
+
+### Custom Cache Providers
+
+The SDK's caching system is designed to help optimize credit usage by caching frequently accessed data. While a basic memory cache is provided, you can implement your own cache provider (e.g., Redis) by implementing the `CacheProvider` interface:
+
+```typescript
+interface CacheProvider {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttlSeconds: number): Promise<void>;
+}
+```
+
+Example Redis implementation:
+```typescript
+import Redis from 'ioredis';
+
+class RedisCache implements CacheProvider {
+  private redis: Redis;
+
+  constructor(options: Redis.RedisOptions) {
+    this.redis = new Redis(options);
+  }
+
+  async get(key: string): Promise<string | null> {
+    return await this.redis.get(key);
+  }
+
+  async set(key: string, value: string, ttlSeconds: number): Promise<void> {
+    await this.redis.setex(key, ttlSeconds, value);
+  }
+}
+
+// Usage
+const redis = new RedisCache({
+  host: 'localhost',
+  port: 6379
+});
+
+const sdk = new Aura('your-api-key', 'https://mainnet-aura.metaplex.com', {
+  cacheTTL: 60000, // 1 minute
+  cacheProvider: redis
+});
+```
+
+The SDK uses compression for cached data to minimize storage usage. Caching is particularly useful for:
+- Frequently accessed assets
+- Proof verification data
+- Common owner/creator queries
+
+Note: Caching is optional and primarily intended to help manage API credit usage by reducing duplicate requests for commonly accessed data.
 
 ## Error Handling
 

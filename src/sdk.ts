@@ -1,7 +1,11 @@
 import { CacheProvider } from "./cache";
 import fetch from 'cross-fetch';
 import { Asset, GetAssetProofResponse, GetAssetResponse, GetAssetsByAuthorityParams, GetAssetsByCreatorParams, GetAssetsByGroupParams, GetAssetsByOwnerParams, GetAssetsByOwnerResponse, GetAssetsResponse, GetSignaturesForAssetParams, GetSignaturesResponse, GetTokenAccountsParams, GetTokenAccountsResponse, SearchAssetsParams, Result, AuraError } from "./types";
+import { compress, decompress } from 'compress-json';
 
+type CompressedValue = string | null;
+type CompressedKey = string;
+type Compressed = [CompressedValue[], CompressedKey];
 
 export class Aura {
     private readonly apiKey: string;
@@ -9,6 +13,7 @@ export class Aura {
     private readonly fullUrl: string;
     private readonly cacheTTL: number;
     private readonly cacheProvider?: CacheProvider;
+    private readonly useCompression: boolean;
 
     /**
      * @param apiKey Your secret API key (keep it server side)
@@ -16,16 +21,45 @@ export class Aura {
      * @param options Configuration options
      * @param options.cacheTTL Cache time-to-live in milliseconds (default is 1 minute)
      * @param options.cacheProvider Optional cache provider implementation
+     * @param options.useCompression Whether to use compression for caching
      */
     constructor(apiKey: string, baseUrl: string = "https://mainnet-aura.metaplex.com", options?: {
         cacheTTL?: number;
         cacheProvider?: CacheProvider;
+        useCompression?: boolean;
     }) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.cacheTTL = options?.cacheTTL ?? 60000;
         this.cacheProvider = options?.cacheProvider;
+        this.useCompression = options?.useCompression ?? true;
         this.fullUrl = `${this.baseUrl}/${this.apiKey}`;
+    }
+
+    private compressData(data: any): string {
+        if (!this.useCompression) {
+            return JSON.stringify(data);
+        }
+        return JSON.stringify(compress(data));
+    }
+
+    private decompressData(data: string): any {
+        if (!this.useCompression) {
+            return JSON.parse(data);
+        }
+        try {
+            // Check if data is in compressed format (array with 2 elements)
+            const parsed = JSON.parse(data);
+            if (Array.isArray(parsed) && parsed.length === 2) {
+                return decompress(parsed as Compressed);
+            }
+            // If not in compressed format, return as-is
+            return parsed;
+        } catch (error) {
+            console.warn('Failed to decompress data:', error);
+            // Attempt to parse as regular JSON as fallback
+            return JSON.parse(data);
+        }
     }
 
     private async makeRequest<T>(method: string, params: any): Promise<Result<T, Error>> {
@@ -82,25 +116,34 @@ export class Aura {
      */
     async getAsset(assetId: string): Promise<Result<GetAssetResponse, Error>> {
         const cacheKey = `asset:${assetId}`;
-
-        // Try to get from cache if a provider is configured
+        
         if (this.cacheProvider) {
             const cachedData = await this.cacheProvider.get(cacheKey);
             if (cachedData) {
-                return { success: true, data: JSON.parse(cachedData) };
+                try {
+                    const data = this.decompressData(cachedData);
+                    return { success: true, data };
+                } catch (error) {
+                    console.warn('Failed to decompress cached data:', error);
+                }
             }
         }
 
         const result = await this.makeRequest<GetAssetResponse>("getAsset", { id: assetId });
-
+        
         if (result.success && this.cacheProvider) {
-            await this.cacheProvider.set(
-                cacheKey,
-                JSON.stringify(result.data),
-                Math.floor(this.cacheTTL / 1000)
-            );
+            try {
+                const compressed = this.compressData(result.data);
+                await this.cacheProvider.set(
+                    cacheKey,
+                    compressed,
+                    Math.floor(this.cacheTTL / 1000)
+                );
+            } catch (error) {
+                console.warn('Failed to compress data for caching:', error);
+            }
         }
-
+        
         return result;
     }
 
