@@ -1,5 +1,5 @@
 {
-  "name": "aura-sdk",
+  "name": "mpl-aura-sdk",
   "version": "1.0.0",
   "description": "SDK to work with Aura",
   "main": "./dist/cjs/index.js",
@@ -13,7 +13,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "npm run clean && npm run build:cjs && npm run build:esm && npm run build:types",
@@ -21,6 +22,7 @@
     "build:esm": "tsc -p tsconfig.esm.json",
     "build:types": "tsc -p tsconfig.types.json",
     "clean": "rimraf dist",
+    "publish:npm": "npm publish --access public",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -29,6 +31,10 @@
     "solana"
   ],
   "author": "0xDon",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thedonmon/aura-sdk"
+  },
   "license": "MIT",
   "devDependencies": {
     "rimraf": "^5.0.0",
